@@ -1,4 +1,10 @@
 #!/bin/bash
+export TF_VAR_enable_fsx_for_lustre=true
+export TF_VAR_region=us-east-2
+export TF_VAR_trn1_32xl_min_size=1
+export TF_VAR_trn1_32xl_desired_size=1
+export TF_VAR_eks_cluster_version=1.31
+export TF_VAR_compute_az=us-east-2c
 
 echo "Initializing ..."
 

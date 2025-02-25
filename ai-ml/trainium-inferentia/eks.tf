@@ -1,3 +1,15 @@
+data "aws_subnets" "compute_subnets" {
+  filter {
+    name   = "vpc-id"
+    values = [module.vpc.vpc_id]
+  }
+
+  filter {
+    name = "tag:Name"
+    values = ["*private-${var.compute_az}"]
+  }
+}
+
 #---------------------------------------------------------------
 # EKS Cluster
 #---------------------------------------------------------------
@@ -5,7 +17,7 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.17"
 
-  cluster_name    = local.name
+  cluster_name    = "neuron-test"
   cluster_version = var.eks_cluster_version
 
   cluster_endpoint_public_access = true
@@ -115,14 +127,15 @@ module "eks" {
     # Trainium node group for Trn1.32xlarge
     #--------------------------------------------------
     # Trainium node group creation can take upto 6 mins
-    trn1-32xl-ng1 = {
-      name        = "trn1-32xl-ng1"
+    trn1-32xl-ng2 = {
+      name        = "trn1-32xl-ng2"
+      # capacity_reservation_specification
       description = "Tran1 32xlarge node group for hosting ML workloads"
       # All trn1 instances should be launched into the same subnet in the preferred trn1 AZ
       # The preferred AZ is the first AZ listed in the AZ id <-> region mapping in main.tf.
       # We use index 2 to select the subnet in AZ1 with the 100.x CIDR:
       #   module.vpc.private_subnets = [AZ1_10.x, AZ2_10.x, AZ1_100.x, AZ2_100.x]
-      subnet_ids = [module.vpc.private_subnets[2]]
+      subnet_ids = data.aws_subnets.compute_subnets.ids
       # aws ssm get-parameters --names /aws/service/eks/optimized-ami/1.27/amazon-linux-2-gpu/recommended/image_id --region us-west-2
       # ami_id   = "ami-0e0deb7ae582f6fe9" # Use this to pass custom AMI ID and ignore ami_type
       ami_type       = "AL2_x86_64_GPU" # Contains Neuron driver
@@ -177,14 +190,14 @@ module "eks" {
     #--------------------------------------------------
     # Trainium node group for Trn1n.32xlarge
     #--------------------------------------------------
-    trn1n-32xl-ng = {
-      name        = "trn1n-32xl-ng"
+    trn1n-32xl-ng2 = {
+      name        = "trn1n-32xl-ng2"
       description = "trn1n 32xlarge node group for hosting ML workloads"
       # All trn1 instances should be launched into the same subnet in the preferred trn1 AZ
       # The preferred AZ is the first AZ listed in the AZ id <-> region mapping in main.tf.
       # We use index 2 to select the subnet in AZ1 with the 100.x CIDR:
       #   module.vpc.private_subnets = [AZ1_10.x, AZ2_10.x, AZ1_100.x, AZ2_100.x]
-      subnet_ids = [module.vpc.private_subnets[2]]
+      subnet_ids = data.aws_subnets.compute_subnets.ids
       # aws ssm get-parameters --names /aws/service/eks/optimized-ami/1.27/amazon-linux-2-gpu/recommended/image_id --region us-west-2
       # ami_id   = "ami-0e0deb7ae582f6fe9" # Use this to pass custom AMI ID and ignore ami_type
       ami_type       = "AL2_x86_64_GPU" # Contains Neuron driver
@@ -226,120 +239,6 @@ module "eks" {
 
       tags = merge(local.tags, {
         Name = "trn1n-32xl-ng1",
-      })
-    }
-
-    #--------------------------------------------------
-    # Inferentia2 Spot node group
-    #--------------------------------------------------
-    inf2-24xl-ng = {
-      name        = "inf2-24xl-ng"
-      description = "inf2 24xl node group for ML inference workloads"
-      # We use index 2 to select the subnet in AZ1 with the 100.x CIDR:
-      #   module.vpc.private_subnets = [AZ1_10.x, AZ2_10.x, AZ1_100.x, AZ2_100.x]
-      subnet_ids = [module.vpc.private_subnets[2]]
-
-      # aws ssm get-parameters --names /aws/service/eks/optimized-ami/1.27/amazon-linux-2-gpu/recommended/image_id --region us-west-2
-      # ami_id   = "ami-0e0deb7ae582f6fe9" # Use this to pass custom AMI ID and ignore ami_type
-      ami_type       = "AL2_x86_64_GPU"
-      capacity_type  = "ON_DEMAND" # Use SPOT for Spot instances
-      instance_types = ["inf2.24xlarge"]
-
-      pre_bootstrap_user_data = <<-EOT
-        # Mount instance store volumes in RAID-0 for kubelet and containerd
-        # https://github.com/awslabs/amazon-eks-ami/blob/master/doc/USER_GUIDE.md#raid-0-for-kubelet-and-containerd-raid0
-        /bin/setup-local-disks raid0
-
-        # Install Neuron monitoring tools
-        yum install aws-neuronx-tools-2.* -y
-        export PATH=/opt/aws/neuron/bin:$PATH
-      EOT
-
-      min_size     = var.inf2_24xl_min_size
-      max_size     = 2
-      desired_size = var.inf2_24xl_desired_size
-
-      labels = {
-        instanceType    = "inf2-24xl"
-        provisionerType = "cluster-autoscaler"
-      }
-
-      block_device_mappings = {
-        xvda = {
-          device_name = "/dev/xvda"
-          ebs = {
-            volume_size = 500
-            volume_type = "gp3"
-          }
-        }
-      }
-
-      taints = [
-        {
-          key    = "aws.amazon.com/neuron",
-          value  = "true",
-          effect = "NO_SCHEDULE"
-        }
-      ]
-
-      tags = merge(local.tags, {
-        Name                     = "inf2-24xl-ng",
-        "karpenter.sh/discovery" = local.name
-      })
-    }
-
-    inf2-48xl-ng = {
-      name        = "inf2-48xl-ng"
-      description = "inf2 48x large node group for ML inference workloads"
-      # We use index 2 to select the subnet in AZ1 with the 100.x CIDR:
-      #   module.vpc.private_subnets = [AZ1_10.x, AZ2_10.x, AZ1_100.x, AZ2_100.x]
-      subnet_ids = [module.vpc.private_subnets[2]]
-
-      # aws ssm get-parameters --names /aws/service/eks/optimized-ami/1.27/amazon-linux-2-gpu/recommended/image_id --region us-west-2
-      # ami_id   = "ami-0e0deb7ae582f6fe9" # Use this to pass custom AMI ID and ignore ami_type
-      ami_type       = "AL2_x86_64_GPU"
-      capacity_type  = "ON_DEMAND" # Use SPOT for Spot instances
-      instance_types = ["inf2.48xlarge"]
-
-      pre_bootstrap_user_data = <<-EOT
-        # Mount instance store volumes in RAID-0 for kubelet and containerd
-        # https://github.com/awslabs/amazon-eks-ami/blob/master/doc/USER_GUIDE.md#raid-0-for-kubelet-and-containerd-raid0
-        /bin/setup-local-disks raid0
-
-        # Install Neuron monitoring tools
-        yum install aws-neuronx-tools-2.* -y
-        export PATH=/opt/aws/neuron/bin:$PATH
-      EOT
-
-      block_device_mappings = {
-        xvda = {
-          device_name = "/dev/xvda"
-          ebs = {
-            volume_size = 500
-            volume_type = "gp3"
-          }
-        }
-      }
-
-      min_size     = var.inf2_48xl_min_size
-      max_size     = 2
-      desired_size = var.inf2_48xl_desired_size
-
-      labels = {
-        instanceType    = "inf2-48xl"
-        provisionerType = "cluster-autoscaler"
-      }
-
-      taints = [
-        {
-          key    = "aws.amazon.com/neuron",
-          value  = true,
-          effect = "NO_SCHEDULE"
-        }
-      ]
-
-      tags = merge(local.tags, {
-        Name = "inf2-48xl-ng",
       })
     }
   }

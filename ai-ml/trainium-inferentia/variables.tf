@@ -135,3 +135,11 @@ variable "access_entries" {
   type        = any
   default     = {}
 }
+
+
+variable "compute_az" {
+  description = "AZ to target for compute (neuron) nodes"
+  type        = string
+  default     = ""
+  # TODO: they should be in local.az_mapping[var.region] in main.tf but we can add check early
+}

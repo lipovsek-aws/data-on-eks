@@ -99,14 +99,6 @@ module "eks_blueprints_addons" {
   }
 
   #---------------------------------------
-  # Cluster Autoscaler
-  #---------------------------------------
-  enable_cluster_autoscaler = true
-  cluster_autoscaler = {
-    values = [templatefile("${path.module}/helm-values/cluster-autoscaler-values.yaml", {})]
-  }
-
-  #---------------------------------------
   # Enable FSx for Lustre CSI Driver
   #---------------------------------------
   enable_aws_fsx_csi_driver = var.enable_fsx_for_lustre
@@ -169,23 +161,23 @@ module "eks_blueprints_addons" {
   #---------------------------------------
   # AWS Load Balancer Controller Add-on
   #---------------------------------------
-  enable_aws_load_balancer_controller = true
+  # enable_aws_load_balancer_controller = true
   # turn off the mutating webhook for services because we are using
   # service.beta.kubernetes.io/aws-load-balancer-type: external
-  aws_load_balancer_controller = {
-    set = [{
-      name  = "enableServiceMutatorWebhook"
-      value = "false"
-    }]
-  }
+  # aws_load_balancer_controller = {
+  #   set = [{
+  #     name  = "enableServiceMutatorWebhook"
+  #     value = "false"
+  #   }]
+  # }
 
   #---------------------------------------
   # Ingress Nginx Add-on
   #---------------------------------------
-  enable_ingress_nginx = true
-  ingress_nginx = {
-    values = [templatefile("${path.module}/helm-values/ingress-nginx-values.yaml", {})]
-  }
+  # enable_ingress_nginx = true
+  # ingress_nginx = {
+  #   values = [templatefile("${path.module}/helm-values/ingress-nginx-values.yaml", {})]
+  # }
 
   tags = local.tags
 }
@@ -261,174 +253,6 @@ module "eks_data_addons" {
       })
     ]
   }
-
-  #---------------------------------------
-  # Deploying Karpenter resources(Nodepool and NodeClass) with Helm Chart
-  #---------------------------------------
-  enable_karpenter_resources = true
-  # We use index 2 to select the subnet in AZ1 with the 100.x CIDR:
-  #   module.vpc.private_subnets = [AZ1_10.x, AZ2_10.x, AZ1_100.x, AZ2_100.x]
-  karpenter_resources_helm_config = {
-    trainium-trn1 = {
-      values = [
-        <<-EOT
-      name: trainium-trn1
-      clusterName: ${module.eks.cluster_name}
-      ec2NodeClass:
-        karpenterRole: ${module.karpenter.node_iam_role_name}
-        subnetSelectorTerms:
-          id: ${module.vpc.private_subnets[2]}
-        securityGroupSelectorTerms:
-          id: ${module.eks.node_security_group_id}
-          tags:
-            Name: ${module.eks.cluster_name}-node
-        blockDevice:
-          deviceName: /dev/xvda
-          volumeSize: 500Gi
-          volumeType: gp3
-          encrypted: true
-          deleteOnTermination: true
-        amiSelectorTerms:
-          - alias: al2023@v20241024
-      nodePool:
-        labels:
-          - instanceType: trainium-trn1
-          - provisionerType: Karpenter
-          - hub.jupyter.org/node-purpose: user
-          - karpenterVersion: ${resource.helm_release.karpenter.version}
-        taints:
-          - key: aws.amazon.com/neuron
-            value: "true"
-            effect: "NoSchedule"
-          - key: hub.jupyter.org/dedicated # According to optimization docs https://z2jh.jupyter.org/en/latest/administrator/optimization.html
-            operator: "Equal"
-            value: "user"
-            effect: "NoSchedule"
-        requirements:
-          - key: "karpenter.k8s.aws/instance-family"
-            operator: In
-            values: ["trn1"]
-          - key: "kubernetes.io/arch"
-            operator: In
-            values: ["amd64"]
-          - key: "karpenter.sh/capacity-type"
-            operator: In
-            values: ["on-demand"]
-        limits:
-          cpu: 1000
-        disruption:
-          consolidationPolicy: WhenEmpty
-          consolidateAfter: 300s
-          expireAfter: 720h
-        weight: 100
-      EOT
-      ]
-    }
-    inferentia-inf2 = {
-      values = [
-        <<-EOT
-      name: inferentia-inf2
-      clusterName: ${module.eks.cluster_name}
-      ec2NodeClass:
-        karpenterRole: ${module.karpenter.node_iam_role_name}
-        subnetSelectorTerms:
-          id: ${module.vpc.private_subnets[2]}
-        securityGroupSelectorTerms:
-          id: ${module.eks.node_security_group_id}
-          tags:
-            Name: ${module.eks.cluster_name}-node
-        blockDevice:
-          deviceName: /dev/xvda
-          volumeSize: 500Gi
-          volumeType: gp3
-          encrypted: true
-          deleteOnTermination: true
-        amiSelectorTerms:
-          - alias: al2023@v20241024
-      nodePool:
-        labels:
-          - instanceType: inferentia-inf2
-          - provisionerType: Karpenter
-          - hub.jupyter.org/node-purpose: user
-          - karpenterVersion: ${resource.helm_release.karpenter.version}
-        taints:
-          - key: aws.amazon.com/neuron
-            value: "true"
-            effect: "NoSchedule"
-          - key: hub.jupyter.org/dedicated # According to optimization docs https://z2jh.jupyter.org/en/latest/administrator/optimization.html
-            operator: "Equal"
-            value: "user"
-            effect: "NoSchedule"
-        requirements:
-          - key: "karpenter.k8s.aws/instance-family"
-            operator: In
-            values: ["inf2"]
-          - key: "kubernetes.io/arch"
-            operator: In
-            values: ["amd64"]
-          - key: "karpenter.sh/capacity-type"
-            operator: In
-            values: [ "on-demand"]
-        limits:
-          cpu: 1000
-        disruption:
-          consolidationPolicy: WhenEmpty
-          consolidateAfter: 300s
-          expireAfter: 720h
-        weight: 100
-      EOT
-      ]
-    }
-    default = {
-      values = [
-        <<-EOT
-      clusterName: ${module.eks.cluster_name}
-      ec2NodeClass:
-        karpenterRole: ${module.karpenter.node_iam_role_name}
-        subnetSelectorTerms:
-          id: ${module.vpc.private_subnets[2]}
-        securityGroupSelectorTerms:
-          id: ${module.eks.node_security_group_id}
-          tags:
-            Name: ${module.eks.cluster_name}-node
-        blockDevice:
-          deviceName: /dev/xvda
-          volumeSize: 200Gi
-          volumeType: gp3
-          encrypted: true
-          deleteOnTermination: true
-        amiSelectorTerms:
-          - alias: al2023@v20241024
-      nodePool:
-        labels:
-          - instanceType: mixed-x86
-          - provisionerType: Karpenter
-          - workload: rayhead
-          - karpenterVersion: ${resource.helm_release.karpenter.version}
-        requirements:
-          - key: "karpenter.k8s.aws/instance-family"
-            operator: In
-            values: ["c5", "m5", "r5"]
-          - key: "karpenter.k8s.aws/instance-size"
-            operator: In
-            values: ["xlarge", "2xlarge", "4xlarge", "8xlarge", "16xlarge", "24xlarge"]
-          - key: "kubernetes.io/arch"
-            operator: In
-            values: ["amd64"]
-          - key: "karpenter.sh/capacity-type"
-            operator: In
-            values: ["spot", "on-demand"]
-        limits:
-          cpu: 1000
-        disruption:
-          consolidationPolicy: WhenEmpty
-          consolidateAfter: 300s
-          expireAfter: 720h
-        weight: 100
-      EOT
-      ]
-    }
-  }
 }
 
 #---------------------------------------------------------------
@@ -461,23 +285,6 @@ resource "aws_iam_role" "cloudwatch_observability_role" {
 resource "aws_iam_role_policy_attachment" "cloudwatch_observability_policy_attachment" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
   role       = aws_iam_role.cloudwatch_observability_role.name
-}
-
-#---------------------------------------------------------------
-# ETCD for TorchX
-#---------------------------------------------------------------
-data "http" "torchx_etcd_yaml" {
-  url = "https://raw.githubusercontent.com/pytorch/torchx/main/resources/etcd.yaml"
-}
-
-data "kubectl_file_documents" "torchx_etcd_yaml" {
-  content = data.http.torchx_etcd_yaml.response_body
-}
-
-resource "kubectl_manifest" "torchx_etcd" {
-  for_each   = var.enable_torchx_etcd ? data.kubectl_file_documents.torchx_etcd_yaml.manifests : {}
-  yaml_body  = each.value
-  depends_on = [module.eks.eks_cluster_id]
 }
 
 #---------------------------------------------------------------

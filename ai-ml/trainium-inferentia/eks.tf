@@ -1,12 +1,15 @@
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 data "aws_subnets" "compute_subnets" {
   filter {
     name   = "vpc-id"
     values = [module.vpc.vpc_id]
   }
-
   filter {
     name = "tag:Name"
-    values = ["*private-${var.compute_az}"]
+    values = ["*private-${element(data.aws_availability_zones.available.zone_ids, index(data.aws_availability_zones.available.names, var.compute_az))}*"]
   }
 }
 
@@ -131,31 +134,13 @@ module "eks" {
       name        = "trn1-32xl-ng2"
       # capacity_reservation_specification
       description = "Tran1 32xlarge node group for hosting ML workloads"
-      # All trn1 instances should be launched into the same subnet in the preferred trn1 AZ
-      # The preferred AZ is the first AZ listed in the AZ id <-> region mapping in main.tf.
-      # We use index 2 to select the subnet in AZ1 with the 100.x CIDR:
-      #   module.vpc.private_subnets = [AZ1_10.x, AZ2_10.x, AZ1_100.x, AZ2_100.x]
-      subnet_ids = data.aws_subnets.compute_subnets.ids
-      # aws ssm get-parameters --names /aws/service/eks/optimized-ami/1.27/amazon-linux-2-gpu/recommended/image_id --region us-west-2
-      # ami_id   = "ami-0e0deb7ae582f6fe9" # Use this to pass custom AMI ID and ignore ami_type
-      ami_type       = "AL2_x86_64_GPU" # Contains Neuron driver
+      subnet_ids = data.aws_subnets.compute_subnets.ids # ["subnet-09695b69e7c9807e7"]
+      ami_type       = "AL2_x86_64_GPU" # Contains Neuron and EFA drivers
       instance_types = ["trn1.32xlarge"]
 
       pre_bootstrap_user_data = <<-EOT
         # Mount instance store volumes in RAID-0 for kubelet and containerd
-        # https://github.com/awslabs/amazon-eks-ami/blob/master/doc/USER_GUIDE.md#raid-0-for-kubelet-and-containerd-raid0
         /bin/setup-local-disks raid0
-
-        # Install Neuron monitoring tools
-        yum install aws-neuronx-tools-2.* -y
-        export PATH=/opt/aws/neuron/bin:$PATH
-
-        # Install latest version of aws cli
-        mkdir /awscli \
-        && wget https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -O /awscli/awscliv2.zip  \
-        && unzip /awscli/awscliv2.zip -d /awscli/ \
-        && /awscli/aws/install --bin-dir /usr/local/bin --install-dir /usr/local/aws-cli --update \
-        && rm -rf /awscli
       EOT
 
       min_size     = var.trn1_32xl_min_size
@@ -193,24 +178,12 @@ module "eks" {
     trn1n-32xl-ng2 = {
       name        = "trn1n-32xl-ng2"
       description = "trn1n 32xlarge node group for hosting ML workloads"
-      # All trn1 instances should be launched into the same subnet in the preferred trn1 AZ
-      # The preferred AZ is the first AZ listed in the AZ id <-> region mapping in main.tf.
-      # We use index 2 to select the subnet in AZ1 with the 100.x CIDR:
-      #   module.vpc.private_subnets = [AZ1_10.x, AZ2_10.x, AZ1_100.x, AZ2_100.x]
-      subnet_ids = data.aws_subnets.compute_subnets.ids
-      # aws ssm get-parameters --names /aws/service/eks/optimized-ami/1.27/amazon-linux-2-gpu/recommended/image_id --region us-west-2
-      # ami_id   = "ami-0e0deb7ae582f6fe9" # Use this to pass custom AMI ID and ignore ami_type
-      ami_type       = "AL2_x86_64_GPU" # Contains Neuron driver
+      subnet_ids = data.aws_subnets.compute_subnets.ids # ["subnet-09695b69e7c9807e7"]
+      ami_type       = "AL2_x86_64_GPU" # Contains Neuron and EFA drivers
       instance_types = ["trn1n.32xlarge"]
 
       pre_bootstrap_user_data = <<-EOT
-        # Mount instance store volumes in RAID-0 for kubelet and containerd
-        # https://github.com/awslabs/amazon-eks-ami/blob/master/doc/USER_GUIDE.md#raid-0-for-kubelet-and-containerd-raid0
         /bin/setup-local-disks raid0
-
-        # Install Neuron monitoring tools
-        yum install aws-neuronx-tools-2.* -y
-        export PATH=/opt/aws/neuron/bin:$PATH
       EOT
 
       min_size     = var.trn1n_32xl_min_size
@@ -273,37 +246,4 @@ module "karpenter" {
   }
 
   tags = local.tags
-}
-
-################################################################################
-# Karpenter Helm chart
-################################################################################
-
-resource "helm_release" "karpenter" {
-  name                = "karpenter"
-  namespace           = "kube-system"
-  create_namespace    = true
-  repository          = "oci://public.ecr.aws/karpenter"
-  repository_username = data.aws_ecrpublic_authorization_token.token.user_name
-  repository_password = data.aws_ecrpublic_authorization_token.token.password
-  chart               = "karpenter"
-  version             = "1.0.6"
-  wait                = true
-
-  values = [
-    <<-EOT
-    settings:
-      clusterName: ${module.eks.cluster_name}
-      clusterEndpoint: ${module.eks.cluster_endpoint}
-      interruptionQueue: ${module.karpenter.queue_name}
-    serviceAccount:
-      name: ${module.karpenter.service_account}
-    EOT
-  ]
-
-  lifecycle {
-    ignore_changes = [
-      repository_password
-    ]
-  }
 }

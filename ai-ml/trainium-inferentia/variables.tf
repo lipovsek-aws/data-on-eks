@@ -114,7 +114,7 @@ variable "inf2_48xl_desired_size" {
 variable "enable_kuberay_operator" {
   description = "Flag to enable kuberay operator"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "kms_key_admin_roles" {

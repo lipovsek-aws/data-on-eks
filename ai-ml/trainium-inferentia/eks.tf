@@ -134,7 +134,7 @@ module "eks" {
       name        = "trn1-32xl-ng2"
       # capacity_reservation_specification
       description = "Tran1 32xlarge node group for hosting ML workloads"
-      subnet_ids = data.aws_subnets.compute_subnets.ids # ["subnet-09695b69e7c9807e7"]
+      subnet_ids = data.aws_subnets.compute_subnets.ids
       ami_type       = "AL2_x86_64_GPU" # Contains Neuron and EFA drivers
       instance_types = ["trn1.32xlarge"]
 
@@ -156,7 +156,6 @@ module "eks" {
       labels = {
         "vpc.amazonaws.com/efa.present" = "true"
         instance-type                   = "trn1-32xl"
-        provisioner                     = "cluster-autoscaler"
       }
 
       taints = [
@@ -178,7 +177,7 @@ module "eks" {
     trn1n-32xl-ng2 = {
       name        = "trn1n-32xl-ng2"
       description = "trn1n 32xlarge node group for hosting ML workloads"
-      subnet_ids = data.aws_subnets.compute_subnets.ids # ["subnet-09695b69e7c9807e7"]
+      subnet_ids = data.aws_subnets.compute_subnets.ids
       ami_type       = "AL2_x86_64_GPU" # Contains Neuron and EFA drivers
       instance_types = ["trn1n.32xlarge"]
 
@@ -198,7 +197,6 @@ module "eks" {
 
       labels = {
         instance-type                   = "trn1n-32xl"
-        provisioner                     = "cluster-autoscaler"
         "vpc.amazonaws.com/efa.present" = "true"
       }
 

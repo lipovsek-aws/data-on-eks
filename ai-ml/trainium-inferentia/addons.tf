@@ -191,7 +191,7 @@ module "eks_data_addons" {
 
   oidc_provider_arn = module.eks.oidc_provider_arn
 
-  enable_aws_neuron_device_plugin = true
+  enable_aws_neuron_device_plugin = false
 
   aws_neuron_device_plugin_helm_config = {
     # Enable default scheduler

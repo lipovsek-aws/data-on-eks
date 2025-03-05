@@ -1,0 +1,58 @@
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: pytorch
+spec:
+  replicatedJobs:
+  - name: workers
+    template:
+      spec:
+        parallelism: 2
+        completions: 2
+        backoffLimit: 0
+        template:
+          spec:
+            tolerations:
+            - key: "aws.amazon.com/neuron"
+              operator: "Exists"
+            containers:
+            - name: pytorch
+              image: 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training-neuronx:1.13.1-neuronx-py310-sdk2.20.2-ubuntu20.04 # 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training-neuron:1.11.0-neuron-py38-sdk2.4.0-ubuntu20.04
+              ports:
+              - containerPort: 3389
+              resources:
+                limits:
+                  aws.amazon.com/neuroncore: 32
+                  vpc.amazonaws.com/efa: 8
+                requests:
+                  aws.amazon.com/neuroncore: 32
+                  vpc.amazonaws.com/efa: 8
+              env:
+              - name: MASTER_ADDR
+                value: "pytorch-workers-0-0.pytorch"
+              - name: MASTER_PORT
+                value: "3389"
+              - name: FI_PROVIDER
+                value: efa
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: FI_EFA_FORK_SAFE
+                value: "1"
+              - name: NCCL_SOCKET_IFNAME
+                value: "^lo"
+              - name: NODE_RANK
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+              - name: PYTHONUNBUFFERED
+                value: "0"
+              command:
+              - bash
+              - -xc
+              - |
+                git clone -b rank_print https://github.com/lipovsek-aws/aws-neuron-samples.git && \
+                  cd aws-neuron-samples/torch-neuronx/training/mnist_mlp && \
+                  torchrun --rdzv_id=123 --nnodes=2 --nproc_per_node=32 --master_addr=$MASTER_ADDR --master_port=$MASTER_PORT --node_rank=$NODE_RANK train_torchrun.py
+
+#--no_python printenv RANK
+# TODO: add neuron_parallel_compile      

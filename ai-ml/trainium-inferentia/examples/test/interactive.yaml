@@ -14,7 +14,6 @@ spec:
       command: ["/usr/bin/sleep"]
       args:  ["infinity"]
       image: 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training-neuronx:1.13.1-neuronx-py310-sdk2.20.2-ubuntu20.04
-      #763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training-neuronx:2.1.2-neuronx-py310-sdk2.20.2-ubuntu20.04
       resources:
         limits:
           aws.amazon.com/neuroncore: 32

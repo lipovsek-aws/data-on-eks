@@ -1,0 +1,67 @@
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: pytorch
+spec:
+  replicatedJobs:
+  - name: workers
+    template:
+      spec:
+        parallelism: 2
+        completions: 2
+        backoffLimit: 0
+        template:
+          spec:
+            tolerations:
+            - key: "aws.amazon.com/neuron"
+              operator: "Exists"
+            containers:
+            - name: pytorch
+              image: 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training-neuronx:1.13.1-neuronx-py310-sdk2.20.2-ubuntu20.04
+              ports:
+              - containerPort: 3389
+              resources:
+                limits:
+                  aws.amazon.com/neuroncore: 32
+                  vpc.amazonaws.com/efa: 8
+                requests:
+                  aws.amazon.com/neuroncore: 32
+                  vpc.amazonaws.com/efa: 8
+              env:
+              - name: MASTER_ADDR
+                value: "pytorch-workers-0-0.pytorch"
+              - name: MASTER_PORT
+                value: "3389"
+              - name: FI_PROVIDER
+                value: efa
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: FI_EFA_FORK_SAFE
+                value: "1"
+              - name: NCCL_SOCKET_IFNAME
+                value: "^lo"
+              - name: NODE_RANK
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+              # Force python to not buffer output and write directly to stdout, so we can view training logs via `kubectl logs`.
+              - name: PYTHONUNBUFFERED
+                value: "0"
+              command: # https://awsdocs-neuron.readthedocs-hosted.com/en/latest/libraries/neuronx-distributed/tutorials/training_llama_tp_zero1.html + TODO add tokenizer and dataset in separate script, set WORLD_SIZE and NODE_ID
+              - bash
+              - -xc
+              - |
+                python -m pip install neuronx_distributed --extra-index-url https://pip.repos.neuron.amazonaws.com && \
+                  git clone git@github.com:aws-neuron/neuronx-distributed.git && \
+                  cd cd ~/neuronx-distributed/examples/training/llama/tp_zero1_llama_hf_pretrain && \
+                  ln -sf ~/neuronx-distributed/examples/training/llama/training_utils.py ./ && \
+                  ln -sf ~/neuronx-distributed/examples/training/llama/modeling_llama_nxd.py ./ && \
+                  ln -sf ~/neuronx-distributed/examples/training/llama/get_dataset.py ./ && \
+                  ln -sf ~/neuronx-distributed/examples/training/llama/requirements.txt ./ && \
+                  chmod +x tp_zero1_llama3_8B_hf_pretrain.sh && \
+                  cp ./8B_config_llama3.1/config.json ./8B_config_llama3 && \
+                  ln -sf 8B_config_llama3.1/config.json ./ && \
+                  neuron_parallel_compile bash tp_zero1_llama3_8B_hf_pretrain.sh
+
+
+# TODO: add neuron_parallel_compile      

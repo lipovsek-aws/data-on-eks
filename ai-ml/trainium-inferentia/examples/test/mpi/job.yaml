@@ -1,0 +1,62 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: jax
+spec:
+  slotsPerWorker: 1
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+           containers:
+           - image: 531572527592.dkr.ecr.us-east-2.amazonaws.com/test/neuron:jax-0.0.3
+             name: jax
+             env:
+              - name: FI_PROVIDER
+                value: efa
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: FI_EFA_FORK_SAFE
+                value: "1"
+              - name: NCCL_SOCKET_IFNAME
+                value: "^lo"
+             command:
+             - mpirun
+             - --allow-run-as-root
+             - -np
+             - "1"
+             # - printenv
+             # - OMPI_COMM_WORLD_RANK
+             - --map-by
+             - ppr:1:node
+             - python
+             - /main.py
+    Worker:
+      replicas: 1
+      template:
+        spec:
+          tolerations:
+          - key: "aws.amazon.com/neuron"
+            operator: "Exists"
+          containers:
+          - image: 531572527592.dkr.ecr.us-east-2.amazonaws.com/test/neuron:jax-0.0.3
+            name: jax
+            env:
+              - name: FI_PROVIDER
+                value: efa
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: FI_EFA_FORK_SAFE
+                value: "1"
+              - name: NCCL_SOCKET_IFNAME
+                value: "^lo"
+            resources:
+              limits:
+                aws.amazon.com/neuroncore: 32
+                vpc.amazonaws.com/efa: 8
+              requests:
+                aws.amazon.com/neuroncore: 32
+                vpc.amazonaws.com/efa: 8
